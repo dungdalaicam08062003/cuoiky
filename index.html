@@ -2,7 +2,10 @@
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <title>Vehicle Monitor</title>
+    <title>Vehicle Telematics Dashboard</title>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
       body {
@@ -10,54 +13,88 @@
         background: #f2f4f8;
         padding: 20px;
       }
+
+      h2 {
+        margin-bottom: 15px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+
       .box {
-        width: 340px;
         background: white;
         padding: 20px;
         border-radius: 8px;
         box-shadow: 0 0 10px #ccc;
-        margin-bottom: 15px;
       }
+
       .offline {
         color: red;
         font-weight: bold;
       }
+
       iframe {
         width: 100%;
-        height: 250px;
+        height: 320px;
         border: none;
         border-radius: 8px;
+      }
+
+      canvas {
+        max-height: 300px;
+      }
+
+      @media (max-width: 768px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
 
   <body>
-    <h2>🚗 TRẠNG THÁI XE</h2>
+    <h2>🚗 HỆ THỐNG GIÁM SÁT XE (TELEMATICS)</h2>
 
-    <div class="box">
-      <p>
-        Nhiệt độ: <b><span id="temp">--</span> °C</b>
-      </p>
-      <p>
-        Cửa: <b><span id="door">--</span></b>
-      </p>
-      <p>
-        Trạng thái: <b><span id="vehicle">--</span></b>
-      </p>
-      <p>
-        Vị trí: <b><span id="lat">--</span>, <span id="lng">--</span></b>
-      </p>
-      <p id="offline" class="offline"></p>
+    <!-- ===== STATUS + MAP ===== -->
+    <div class="grid">
+      <!-- LEFT -->
+      <div class="box">
+        <p>
+          Nhiệt độ: <b><span id="temp">--</span> °C</b>
+        </p>
+        <p>
+          Cửa: <b><span id="door">--</span></b>
+        </p>
+        <p>
+          Trạng thái xe: <b><span id="vehicle">--</span></b>
+        </p>
+        <p>
+          Vị trí: <b><span id="lat">--</span>, <span id="lng">--</span></b>
+        </p>
+        <p id="offline" class="offline"></p>
+      </div>
+
+      <!-- RIGHT -->
+      <div class="box">
+        <h4>📍 BẢN ĐỒ GPS</h4>
+        <iframe id="map"></iframe>
+      </div>
     </div>
 
-    <div class="box">
-      <h4>📍 BẢN ĐỒ</h4>
-      <iframe id="map" src=""></iframe>
+    <!-- ===== CHART ===== -->
+    <div class="box" style="margin-top: 20px">
+      <h4>🌡️ BIỂU ĐỒ NHIỆT ĐỘ</h4>
+      <canvas id="tempChart"></canvas>
     </div>
 
     <script>
-      const URL = "https://vehicles-3b445-default-rtdb.firebaseio.com/car.json";
+      const URL =
+        "https://vehicles-3b445-default-rtdb.firebaseio.com/car/latest.json";
 
+      // ===== VEHICLE TEXT =====
       function vehicleText(v) {
         if (v == 1) return "Bình thường";
         if (v == 2) return "Đường xấu";
@@ -66,6 +103,50 @@
         return "Không rõ";
       }
 
+      // ===== CHART INIT =====
+      const ctx = document.getElementById("tempChart").getContext("2d");
+
+      const tempChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: "Nhiệt độ (°C)",
+              data: [],
+              borderColor: "red",
+              tension: 0.3,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              title: { display: true, text: "Thời gian" },
+            },
+            y: {
+              title: { display: true, text: "°C" },
+            },
+          },
+        },
+      });
+
+      function addTempPoint(temp) {
+        const time = new Date().toLocaleTimeString();
+
+        tempChart.data.labels.push(time);
+        tempChart.data.datasets[0].data.push(temp);
+
+        if (tempChart.data.labels.length > 20) {
+          tempChart.data.labels.shift();
+          tempChart.data.datasets[0].data.shift();
+        }
+
+        tempChart.update();
+      }
+
+      // ===== LOAD DATA =====
       function loadData() {
         fetch(URL)
           .then((res) => res.json())
@@ -83,20 +164,26 @@
             document.getElementById("lat").innerText = data.lat;
             document.getElementById("lng").innerText = data.lng;
 
-            // ===== MAP =====
+            // MAP
             if (data.lat && data.lng) {
               document.getElementById(
                 "map"
               ).src = `https://www.google.com/maps?q=${data.lat},${data.lng}&z=16&output=embed`;
             }
 
-            // ===== OFFLINE CHECK (SERVER TIME) =====
+            // OFFLINE CHECK
             let now = Math.floor(Date.now() / 1000);
             if (now - data.lastUpdate > 300) {
               document.getElementById("offline").innerText =
                 "⚠️ XE OFFLINE (>5 phút)";
             } else {
-              document.getElementById("offline").innerText = "";
+              document.getElementById("offline").innerText =
+                "✅ Xe hoạt động bình thường";
+            }
+
+            // ADD TO CHART
+            if (typeof data.temp === "number") {
+              addTempPoint(data.temp);
             }
           })
           .catch((err) => {
@@ -106,7 +193,6 @@
           });
       }
 
-      // 🔁 Update mỗi 2 giây
       setInterval(loadData, 2000);
       loadData();
     </script>
